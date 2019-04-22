@@ -1,29 +1,27 @@
 import socket
+import re
 from multiprocessing import Process, Manager
 
 
-#set <key> : <val>
-#get <key>
-#del <key>
-
-
-def main(storage, connection):
+def main(connection, storage):
 	while True:
 		cmd = b""
-		while True:
-			data = connection.recv(1024)
-			if not data:
-				break
-			cmd += data
-		cmd = cmd.decode()
-		if cmd.startswith("set "):
-			pass
-		elif cmd.startswith("get "):
-			pass
-		elif cmd.startswith("del "):
-			pass
-		else:
-			pass #unrecognized command
+		for b in iter(lambda: connection.recv(1), b"\x00"):
+			cmd += b
+		match = re.fullmatch(b"set (\w+) = (\w+)", cmd)
+		if match:
+			storage[match.group(1)] = match.group(2)
+			connection.send(b"ok\x00")
+			continue
+		match = re.fullmatch(b"del (\w+)", cmd)
+		if match:
+			connection.send(b"ok\x00" if storage.pop(match.group(1), None) else b"key doesn't exists\x00")
+			continue
+		match = re.fullmatch(b"get (\w+)", cmd)
+		if match:
+			connection.send(storage[match.group(1)] + b"\x00" if match.group(1) in storage else b"key doesn't exists\x00")
+			continue
+		connection.send(b"unrecognized command\x00")
 
 
 if __name__ == "__main__":
@@ -35,6 +33,6 @@ if __name__ == "__main__":
 	while True:
 		conn, addr = sock.accept()
 		print("New connection from {}".format(addr))
-		proc = Process(target=main, args=(storage, conn))
+		proc = Process(target=main, args=(conn, storage))
 		proc.daemon = True
 		proc.start()

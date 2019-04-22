@@ -1,14 +1,12 @@
 import socket
-import random
-import sys
-import time
-
-alph = bytes((c for c in range(ord("a"), ord("z")+1)))
 
 if __name__ == "__main__":
 	sock = socket.socket()
 	sock.connect(("localhost", 9090))
 	while True:
-		msg = "Hello from {}".format(sys.argv[1])
-		sock.send(msg.encode())
-		time.sleep(1)
+		data_to_send = input(">>> ")
+		sock.send(data_to_send.encode() + b"\x00")
+		reply = b""
+		for b in iter(lambda: sock.recv(1), b"\x00"):
+			reply += b
+		print("<<< " + reply.decode())
