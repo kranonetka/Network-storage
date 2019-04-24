@@ -6,8 +6,13 @@ from multiprocessing import Process, Manager
 def main(connection, storage):
 	while True:
 		cmd = b""
-		for b in iter(lambda: connection.recv(1), b"\x00"):
-			cmd += b
+		while True:
+			cmd += connection.recv(1)
+			if not cmd or cmd[-1] == 0:
+				break
+		if not cmd:
+			exit(0)
+		cmd = cmd[:-1]
 		match = re.fullmatch(b"set (\w+) = (\w+)", cmd)
 		if match:
 			storage[match.group(1)] = match.group(2)
@@ -21,6 +26,10 @@ def main(connection, storage):
 		if match:
 			connection.send(storage[match.group(1)] + b"\x00" if match.group(1) in storage else b"key doesn't exists\x00")
 			continue
+		if cmd == b"exit":
+			connection.shutdown(socket.SHUT_RDWR)
+			connection.close()
+			exit(0)
 		connection.send(b"unrecognized command\x00")
 
 
