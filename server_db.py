@@ -1,5 +1,4 @@
 import socket
-import re
 import multiprocessing
 from multiprocessing import synchronize
 import sqlite3
@@ -112,7 +111,8 @@ def get_by_key(db: sqlite3.Connection, lock: multiprocessing.synchronize.Lock, k
 	return msg
 
 
-def save_file(lock: multiprocessing.synchronize.Lock, filename: str, content: bytes) -> bytes:
+def save_file(lock: multiprocessing.synchronize.Lock, filepath: str, content: bytes) -> bytes:
+	filename = filepath.split("/")[-1]
 	lock.acquire()
 	try:
 		with open(filename, "wb") as file:
@@ -125,6 +125,7 @@ def save_file(lock: multiprocessing.synchronize.Lock, filename: str, content: by
 	lock.release()
 	return msg
 
+
 def get_file(lock: multiprocessing.synchronize.Lock, filename: str) -> bytes:
 	lock.acquire()
 	try:
@@ -136,39 +137,45 @@ def get_file(lock: multiprocessing.synchronize.Lock, filename: str) -> bytes:
 	return content
 
 
-def main(connection: socket.socket, lock: multiprocessing.synchronize.Lock):
+def main(connaddr: tuple, lock: multiprocessing.synchronize.Lock):
+	connection = connaddr[0]
+	addr = connaddr[1]
 	db = sqlite3.connect("storage.db")
-	while True:
-		cmd = read_message(connection)
-		if cmd == b"set":
-			key = read_message(connection).decode()
-			value = read_message(connection).decode()
-			msg = set_val(db, lock, key, value)
-			send_message(connection, msg)
-		elif cmd == b"del":
-			key = read_message(connection).decode()
-			msg = del_by_key(db, lock, key)
-			send_message(connection, msg)
-		elif cmd == b"get":
-			key = read_message(connection).decode()
-			msg = get_by_key(db, lock, key)
-			send_message(connection, msg)
-		elif cmd == b"exit":
-			connection.shutdown(socket.SHUT_RDWR)
-			connection.close()
-			db.close()
-			exit()
-		elif cmd == b"setfile":
-			filename = read_message(connection).decode()
-			content = read_message(connection)
-			msg = save_file(lock, filename, content)
-			send_message(connection, msg)
-		elif cmd == b"getfile":
-			filename = read_message(connection).decode()
-			content = get_file(lock, filename)
-			send_message(connection, content)
-		else:
-			send_message(connection, b"unrecognized command")
+	try:
+		while True:
+			cmd = read_message(connection)
+			if cmd == b"set":
+				key = read_message(connection).decode()
+				value = read_message(connection).decode()
+				msg = set_val(db, lock, key, value)
+				send_message(connection, msg)
+			elif cmd == b"del":
+				key = read_message(connection).decode()
+				msg = del_by_key(db, lock, key)
+				send_message(connection, msg)
+			elif cmd == b"get":
+				key = read_message(connection).decode()
+				msg = get_by_key(db, lock, key)
+				send_message(connection, msg)
+			elif cmd == b"setfile":
+				filename = read_message(connection).decode()
+				content = read_message(connection)
+				msg = save_file(lock, filename, content)
+				send_message(connection, msg)
+			elif cmd == b"getfile":
+				filename = read_message(connection).decode()
+				content = get_file(lock, filename)
+				send_message(connection, content)
+			elif cmd == b"exit":
+				connection.shutdown(socket.SHUT_RDWR)
+				connection.close()
+				db.close()
+				exit()	
+			else:
+				send_message(connection, b"unrecognized command")
+	except IOError:
+		print("Lose connection from {}".format(addr))
+		exit()
 
 
 if __name__ == "__main__":
@@ -186,8 +193,8 @@ if __name__ == "__main__":
 	sock.bind(("", 9090))
 	sock.listen(5)
 	while True:
-		conn, addr = sock.accept()
-		print("New connection from {}".format(addr))
-		proc = multiprocessing.Process(target=main, args=(conn, lock))
+		connaddr = sock.accept()
+		print("New connection from {}".format(connaddr[1]))
+		proc = multiprocessing.Process(target=main, args=(connaddr, lock))
 		proc.daemon = True
 		proc.start()
